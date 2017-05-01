@@ -1,0 +1,408 @@
+---
+title: "Predicting Feature Film Popularity from Critic's Scores"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+### Submission by Connor Lenio. Email: cojamalo@gmail.com
+Completion Date: May 1, 2017
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(statsr)
+library(pander); library(ggplot2); library(gridExtra); library(lubridate); library(dplyr)
+```
+
+### Load data
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+* * *
+
+## Part 1: Data
+
+The `movies` data set supplied for this project includes 651 randomly sampled movies released in the United States from 1970-2016. No other information is given as to how the random sampling was conducted. From a glimpse of the data, the data likely rerpresents a simple random sample (SRS) of movies that does not use any stratification or blocking strategies. For instance, there are varying amounts of movies for each theater release year as well as different proportions of movies for each genre than is likely present in the population of all movies released from 1970-2016. Thus, there are no controls in place for the SRS to closely resemble actual distributions of movies from 1970-2016. This means the data is highly susceptible to sampling variation when considering its representatives of all movies from this time.  
+
+Moreover, a lack of strategic sampling design means any sources of dependency between individual movies such as the fact they are part of the same series, such as is the case for sequels, is not controlled for and considered in this analysis. In addition, the measures of movie popularity such as the Rotten Tomatoes scores and the IMDB rating are themselves samples of opinions. These websites are reliant on voluntary participation by users and, therefore, these popularity scores are also possibly biased, and such rates of bias could be different for each individual movie. Therefore, any conclusions drawn from the data are generalizable to US movies since a simple random sample was used. However, there are many sources of lingering uncertainty in the external validity of the data considering the potential sources of bias a lack of a strategic sampling design introduces.
+
+The simple random sample does not involve random assignment of movies to the factors under consideration. In addition, the data do not represent an experiment or observational study, and, thus, there are limitations to what sort of conclusions can be drawn from the data. Any identified associations will be complicated by lurking variables and bias. It is impossible to rule out other confounding factors that may affect any discovered associations between the factors in the analysis. Therefore, no causality can be determined from inference on this data, only evidence of for associations. Such relationships are useful for hypothesis formation for the design of future studies that may establish causality. Even without causality, the relationships present in this data may be informative about features of modern US movies and their popularity.
+
+
+* * *
+
+## Part 2: Research question
+For feature films released from 1970-2016, does the Rotten Tomatoes critic score predict the popularity (general public ratings) for the movies, and are there any other features of the movies that improve the prediction of popularity when added to a model with critic score already included?
+
+
+<i>Relevance:</i> Film critics in the media commonly give their professional assessment of movies as they are released to the public. As professional judges, one may wonder if their opinion of a movie as a group matches up with what the general public actually thinks. Getting an understanding of this potential difference will shed light on whether film critics as a whole are a trustworthy source for understanding the opinion of the general public. 
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+### Data Cleaning
+
+Before answering the question, the data must be cleaned and refined to address the scope of the question. Variables that represent information specific to each individual movie, as well as any factors with large domains, are removed. Factor variables derived from other quantitative variables in the data such as the `critics_rating` are also eliminated. Finally, information about DVDs is excluded as this analysis just concerns a movie's initial release.
+```{r clean-data-1}
+# Select for variables that are either categorical with a small domain or quantitative numerical
+feat_films <- movies %>% select(-director:-rt_url, -imdb_num_votes:-critics_rating, -audience_rating, -studio, -dvd_rel_year:-dvd_rel_day)
+# Select for movies that are feature films only
+feat_films <- feat_films %>% filter(title_type == "Feature Film") %>% droplevels %>% select(-title_type)
+# Any films in the documentary category are dropped as any title_types for Documentaries have been dropped
+feat_films <- feat_films %>% filter(genre != "Documentary") %>% droplevels
+```
+
+<br>
+
+There are a few explanatory variables to add that may be of interest when considering movie features using this data. For instance, a new explanatory variable is added for `thtr_rel_season`, a more general time variable than `thtr_rel_month`, but more specific than `thtr_rel_year`. It is added in case the season a movie is released in bares any relationship to its popularity.
+```{r new-variables-1}
+# Add new thtr_rel_season variable to see if movies released at certain times of the year are rated differently
+feat_films <- feat_films %>% mutate(thtr_rel_season = factor(ifelse(thtr_rel_month > 11 | thtr_rel_month < 3, "Winter", ifelse(thtr_rel_month > 2 & thtr_rel_month < 6,"Spring", ifelse(thtr_rel_month > 5 & thtr_rel_month < 9,"Summer", "Fall")))))
+# Factor the new variable
+feat_films$thtr_rel_season <- factor(feat_films$thtr_rel_season)
+```
+
+<br>
+
+Moreover, all remaining time variables are converted to date time format. 
+
+```{r new-variables-2}
+feat_films <- feat_films %>% mutate(thtr_rel = ymd(paste(thtr_rel_year,thtr_rel_month, thtr_rel_day,sep="-")))
+```
+
+<br>
+
+Finally, in viewing the `genre` variable, the factor level "Other" is uninformative, and, thus, any movies with this genre type were converted to their more accurate genre using information from Rotten Tomatoes.
+```{r fix-genre}
+feat_films$genre[which(feat_films$title == "Django Unchained")] <- "Drama"
+feat_films$genre[which(feat_films$title == "Barbarosa")] <- "Action & Adventure"
+feat_films$genre[which(feat_films$title == "Groundhog Day")] <- "Comedy"
+feat_films$genre[which(feat_films$title == "The Color of Money")] <- "Drama"
+feat_films$genre[which(feat_films$title == "Grease")] <- "Musical & Performing Arts"
+feat_films$genre[which(feat_films$title == "Down in the Valley")] <- "Drama"
+feat_films$genre[which(feat_films$title == "The Fighter")] <- "Drama"
+feat_films$genre[which(feat_films$title == "The Main Event")] <- "Comedy"
+feat_films$genre[which(feat_films$title == "Goin' South")] <- "Comedy"
+feat_films$genre[which(feat_films$title == "The Butcher's Wife")] <- "Comedy"
+feat_films$genre[which(feat_films$title == "The Groove Tube")] <- "Comedy"
+feat_films$genre[which(feat_films$title == "UHF")] <- "Comedy"
+feat_films$genre[which(feat_films$title == "Urban Cowboy")] <- "Drama"
+feat_films$genre[which(feat_films$title == "Maverick")] <- "Action & Adventure"
+feat_films$genre[which(feat_films$title == "Russian Dolls (Les Poupees Russes)")] <- "Art House & International"
+feat_films <- droplevels(feat_films) %>% select(-title) 
+```
+
+<br>
+
+The last step is to ensure the correct response variable is in the data. For the sake of this analysis, popularity will be interpreted as the favorability of a movie for the general public, and the user scores for each movie are assumed to be representative of this favorability. Thus, the favorability score will be represented by the average of the user scores for each movie from both the IMDB and Rotten Tomatoes website, `gen_pub_pop`.
+```{r new-popularity-var}
+feat_films <- feat_films %>% mutate(gen_pub_pop = ((imdb_rating * 10)+audience_score)/2) %>% select(-imdb_rating,-audience_score)
+```
+
+### EDA for General Public Popularity vs. Critic Score
+Summary statistics are computed to compare the distribution of the critics' score with the distribution of the public's score.
+```{r critics-stats, results ="asis"}
+x <- feat_films$critics_score
+table <- feat_films %>% summarize(Q1 = quantile(x, 0.25), MEAN = mean(x), MEDIAN = median(x),Q3 = quantile(x, 0.75), IQR = IQR(x), STDEV = sd(x)) %>%
+    mutate(SKEW = ifelse(MEAN > MEDIAN, "RIGHT", "LEFT"))
+pandoc.table(table)
+```
+Summary statistics for `critics_score`
+
+<br>
+
+```{r pop-stats, results ="asis"}
+y <- feat_films$gen_pub_pop
+table <- feat_films %>% summarize(Q1 = quantile(y, 0.25), MEAN = mean(y), MEDIAN = median(y),Q3 = quantile(y, 0.75), IQR = IQR(y), STDEV = sd(y)) %>%
+    mutate(SKEW = ifelse(MEAN > MEDIAN, "RIGHT", "LEFT"))
+pandoc.table(table)
+```
+Summary statistics for `gen_pub_pop`
+
+<br>
+
+The critics' scores have smaller measures of center and larger measures of variance than the public's scores. Thus, while critics tend to give feature films lower scores, they also give a greater variety of scores than the general public.
+
+<br>
+
+To check for a relationship between the two variables, the explanatory variable, `critics_score`, and the response variable, `gen_pub_pop` are plotted on a scatterplot:
+```{r scatterplot, message=FALSE, warning=FALSE}
+ggplot(feat_films, aes(x=critics_score, y = gen_pub_pop)) + 
+    geom_point() + 
+    geom_smooth(method = "lm") + 
+    geom_smooth(color = "red") +
+    labs(title = "General Public Score Versus Critics' Score",x="Critics' Score (1-100)",y = "General Public's Score (1-100)") +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+The linear trend line and "loess" line suggest there is a linear relationship between the two scores.
+
+
+* * *
+
+## Part 4: Modeling
+
+### Single Linear Regression
+In order to quantify the linear relationship between `gen_pub_pop` and `critics_score`, a single linear regression is used with the formula, `gen_pub_pop ~ critics_score`.  
+```{r single-linear-model}
+fit1 <- lm(gen_pub_pop ~ critics_score, feat_films)
+summary(fit1)
+```
+The linear regression suggests that popularity has a moderately strong linear correlation with critics' score (r = 0.726). The model is of the form:
+
+$$ gen\_pub\_pop = 41.056 + 0.384* critics\_score  + e$$
+The p-value for the slope estimate for `critics_score` is < 0.05, so this relationship between `critics_score` and `gen_pub_pop` is statistically significant. 
+
+However, the R-squared for the model is 0.5278, signifying that about 52.8% of the variability in popularity can be explained by the critics score using this model. It is worth investigating other models that include `critics_score` to utilize any additional information in `feat_films` to determine a better fit for the data.  
+
+<br>
+
+### Multiple Linear Regression
+To check for a better model, the forward selection method for adjusted r-squared will be used for up to two decimal places of r-squared. A function was written to help facilitate the process. For each run of the following function, all the possible variables are added to the base formula and checked for any improved r-squared values. The top three models for adjusted r-squared are then returned. Only the code for the first run is shown, but the results for the other runs are included. 
+```{r first-forward-select, results="asis"}
+data <- feat_films
+base_function <- "gen_pub_pop ~ critics_score"
+model <- lm(base_function, data)
+# Adjusted R^2
+R_2 <- summary(model)$adj.r.squared
+predictors <- length(attributes(summary(model)$terms)$term.labels)
+
+output <- data.frame(model = base_function, terms = predictors, adj_R_2 = R_2) 
+
+# extract response variable
+params <- trimws(strsplit(base_function, split = "~")[[1]])
+variables <- names(data)
+variables <- variables[!grepl(params[1], variables)]
+# Construct base vector from 
+base <- params[2]
+if (grepl("[+]", params[2])) {
+    base <- trimws(strsplit(params[2], split = "[+]")[[1]])     
+}
+# Construct expand_args from base
+expand_args <- c()
+for (item in base) {
+    expand_args <- c(expand_args, list(item))
+}
+expand_args <- c(expand_args, list(variables))
+# Construct the combination data frame
+current <- expand.grid(expand_args, stringsAsFactors = FALSE)
+# This checks for any rows that are duplicates of each other:
+duplicates <- duplicated(apply(apply( current, 1, sort), 2 , paste , collapse = ""))
+current <- current[!duplicates,]
+# This removes any rows with the same variable in more than one column
+key <- colSums(apply(apply( current, 1, as.character), 2 , duplicated))
+current <- current[key == 0,] 
+# Construct formulas vector   
+formulas <- apply(current, 1 , paste , collapse = " + ")    
+formulas <- paste0(params[1], " ~ ", formulas)
+# Runs model eval for each of a vector of formula strings
+for (formula in formulas)   {
+    model <- lm(formula, data)
+    # Adjusted R^2
+    R_2 <- summary(model)$adj.r.squared
+    predictors <- length(attributes(summary(model)$terms)$term.labels)
+    new_row <- data.frame(model = formula, terms = predictors, adj_R_2 = R_2) 
+    output <- rbind(output, new_row)
+}
+output <- output %>% arrange(desc(adj_R_2))
+pandoc.table(head(output,3))
+```
+For the first run of the function, it appears the addition of `genre` increases the adjusted r-squared of the model from 0.53 to 0.55. Thus, the current model formula is "gen_pub_pop ~ critics_score + genre".
+
+<br>
+
+```{r second-forward-select, echo=FALSE, results="asis"}
+data <- feat_films
+base_function <- "gen_pub_pop ~ critics_score + genre"
+model <- lm(base_function, data)
+# Adjusted R^2
+R_2 <- summary(model)$adj.r.squared
+predictors <- length(attributes(summary(model)$terms)$term.labels)
+
+output <- data.frame(model = base_function, terms = predictors, adj_R_2 = R_2) 
+
+# extract response variable
+params <- trimws(strsplit(base_function, split = "~")[[1]])
+variables <- names(data)
+variables <- variables[!grepl(params[1], variables)]
+# Construct base vector from 
+base <- params[2]
+if (grepl("[+]", params[2])) {
+    base <- trimws(strsplit(params[2], split = "[+]")[[1]])     
+}
+# Construct expand_args from base
+expand_args <- c()
+for (item in base) {
+    expand_args <- c(expand_args, list(item))
+}
+expand_args <- c(expand_args, list(variables))
+# Construct the combination data frame
+current <- expand.grid(expand_args, stringsAsFactors = FALSE)
+# This checks for any rows that are duplicates of each other:
+duplicates <- duplicated(apply(apply( current, 1, sort), 2 , paste , collapse = ""))
+current <- current[!duplicates,]
+# This removes any rows with the same variable in more than one column
+key <- colSums(apply(apply( current, 1, as.character), 2 , duplicated))
+current <- current[key == 0,] 
+# Construct formulas vector   
+formulas <- apply(current, 1 , paste , collapse = " + ")    
+formulas <- paste0(params[1], " ~ ", formulas)
+# Runs model eval for each of a vector of formula strings
+for (formula in formulas)   {
+    model <- lm(formula, data)
+    # Adjusted R^2
+    R_2 <- summary(model)$adj.r.squared
+    predictors <- length(attributes(summary(model)$terms)$term.labels)
+    new_row <- data.frame(model = formula, terms = predictors, adj_R_2 = R_2) 
+    output <- rbind(output, new_row)
+}
+output <- output %>% arrange(desc(adj_R_2))
+pandoc.table(head(output,3))
+```
+For the second run of the function, the addition of `runtime` increases the adjusted r-squared of the model from 0.55 to 0.56. Thus, the current model formula is "gen_pub_pop ~ critics_score + genre + runtime".
+
+<br>
+
+```{r third-forward-select, echo=FALSE, results="asis"}
+data <- feat_films
+base_function <- "gen_pub_pop ~ critics_score + genre + runtime"
+model <- lm(base_function, data)
+# Adjusted R^2
+R_2 <- summary(model)$adj.r.squared
+predictors <- length(attributes(summary(model)$terms)$term.labels)
+
+output <- data.frame(model = base_function, terms = predictors, adj_R_2 = R_2) 
+
+# extract response variable
+params <- trimws(strsplit(base_function, split = "~")[[1]])
+variables <- names(data)
+variables <- variables[!grepl(params[1], variables)]
+# Construct base vector from 
+base <- params[2]
+if (grepl("[+]", params[2])) {
+    base <- trimws(strsplit(params[2], split = "[+]")[[1]])     
+}
+# Construct expand_args from base
+expand_args <- c()
+for (item in base) {
+    expand_args <- c(expand_args, list(item))
+}
+expand_args <- c(expand_args, list(variables))
+# Construct the combination data frame
+current <- expand.grid(expand_args, stringsAsFactors = FALSE)
+# This checks for any rows that are duplicates of each other:
+duplicates <- duplicated(apply(apply( current, 1, sort), 2 , paste , collapse = ""))
+current <- current[!duplicates,]
+# This removes any rows with the same variable in more than one column
+key <- colSums(apply(apply( current, 1, as.character), 2 , duplicated))
+current <- current[key == 0,] 
+# Construct formulas vector   
+formulas <- apply(current, 1 , paste , collapse = " + ")    
+formulas <- paste0(params[1], " ~ ", formulas)
+# Runs model eval for each of a vector of formula strings
+for (formula in formulas)   {
+    model <- lm(formula, data)
+    # Adjusted R^2
+    R_2 <- summary(model)$adj.r.squared
+    predictors <- length(attributes(summary(model)$terms)$term.labels)
+    new_row <- data.frame(model = formula, terms = predictors, adj_R_2 = R_2) 
+    output <- rbind(output, new_row)
+}
+output <- output %>% arrange(desc(adj_R_2))
+pandoc.table(head(output,3))
+```
+For the third run of the function, the addition of `best_pic_nom` does not significantly increase the adjusted r-squared of the model with a adjusted r-squared of 0.56. Thus, the forward selection is completed and the final model formula is "gen_pub_pop ~ critics_score + genre + runtime", boosting the adjusted r-squared from 0.53 to 0.56, or an increase of about 3% more variance explained by the model.
+
+<br>
+
+A summary of the model is as follows:
+```{r summary-fit3}
+fit3 <- lm(gen_pub_pop ~ critics_score + genre + runtime, feat_films)
+summary(fit3)
+```
+The multiple linear regression suggests that popularity has a moderately strong linear correlation with critic's score, genre, and runtime (r = 0.75). The model is of the form:
+
+\begin{multline}
+gen\_pub\_pop = 31.84929 + 0.35* critics\_score+ 0.098*runtime + 2.5*Animation + 4.9*Art House - 0.95*Comedy \\
++ 1.35 * Drama - 4.72 * Horror + 8.16 * Musical - 1.72 * Mystery - 5.23 * Sci Fi +e
+\end{multline}
+
+The p-value for the entire model is significant and the p-value for all the variables except for genre are significant. Some of the slopes for genre are not statistically significant, so for some genre types the model is implying a relationship where one could not be proven to exist. 
+The R-squared for the model is 0.5572, signifying that about 55.7% of the variability in popularity can be explained by the critics score using this model. 
+
+<br>
+
+ANOVA is used to check if this model is significantly different than the previous model:
+```{r anova}
+fit3 <- lm(gen_pub_pop ~ critics_score + genre + runtime, feat_films)
+anova(fit1,fit3)
+```
+Yes, the p-value for the new model is less than 0.05 and, thus, the new model is significantly different and improved over the previous model.
+
+<br>
+
+### Residual Analysis
+To check the validity of this model, the residual plots for `fit3` will be used:
+
+```{r resid-plots, fig.width =8, fig.height=6}
+par(mfrow=c(2,2))
+plot(fit3)
+```
+
+A valid linear analysis involves:
+
+(1) A linear relationship between each (numerical) explanatory variable and the response
+
+    Yes, each numerical variable has a statistically significant linear relationship with `gen_pub_pop`.
+    
+(2) Nearly normal residuals with a mean of zero
+
+    Yes, the quantile-quantile plot of the residuals confirms a normal distribution and residuals are centered around zero.
+    
+(3) Constant variability of residuals
+
+    Yes, the scale-location plot shows a fairly straight line from left to right, so the model does involve homoscedasticity..
+    
+(4) Independence of residuals (and hence observations)
+
+    Yes, in the residuals versus fitted plot, the residuals all appear independent
+
+
+* * *
+
+## Part 5: Prediction
+The model will be used to predict the `gen_pub_pop` of the 2016 movie, "Arrival."
+```{r predict,results="asis"}
+new_movie = data.frame(title="Arrival",critics_score=94, genre="Drama", runtime=116)
+row1<- data.frame(type="predict()",predict(fit3, new_movie, interval="confidence")) 
+row2 <- data.frame(type ="RMSE",fit = 77.85169, lwr = predict(fit3, new_movie, interval="confidence")[1] - 9.767, upr = predict(fit3, new_movie, interval="confidence")[1] + 9.767 )
+pandoc.table(rbind(row1,row2))
+```
+This table features the prediction and confidence interval from the `predict` function as well as the prediction from the `predict` function and the Residual Mean Square Error (RMSE) used to construct confidence intervals. The RMSE is included as it as a very conservative measure of model accuracy that captures a large proportion of the model's residuals when fit to the data, and thus, can give a sense of how accurate the model will be for a new predicted value. 
+
+<br>
+
+Now, the actual popularity value for "Arrival" is computed where it received an 82% audience score on Rotten Tomatoes and an 8.0 on IMDB:
+
+```{r actual}
+# Actual `gen_pub_pop`
+(82 + 8.0*10) /2
+```
+Thus, the actual `gen_pub_pop` for "Arrival" is 81.0 versus the predicted value of 77.9. The 81.0 actual value is outside of the predicted confidence interval, so the error in this prediction is statistically surprising considering the model and its source data. However, practically speaking, the magnitude of this residual, 3.1 points, is not a very large error considering the 100 point scale i.e. the difference in popularity between a 77.9 movie and an 81.0 movie are expected to be minimal in practical terms. Moreover, the very conservative RMSE easily contains the actual result, and thus, the actual value is not surprising considering there were many residuals much larger than 3.1 when the model was fit to the data.
+
+* * *
+
+## Part 6: Conclusion
+<i>Question:</i> For feature films released from 1970-2016, does the Rotten Tomatoes critic score predict the popularity (general public ratings) for the movies, and are there any other features of the movies that improve the prediction of popularity when added to a model with critic score already included?
+
+Yes, modeling popularity from the critic's score alone yielded a statistically significant model that explains about 52.8% of the variability in popularity of US feature films with a RMSE of 10.1% popularity. Specifically, movie critics are expected to underestimate a feature film's popularity slightly as they give lower ratings more often than the general public, but they also make a greater diversity of ratings in general than the public. If `genre` and `runtime` are added to the model, the statistically significant and slightly improved model explains about 55.7% of the variability in popularity of feature films with a RMSE of 9.8% popularity. When predicting the popularity of feature films using the model, the confidence intervals for the prediction can overestimate the model's accuracy, however. Using the RMSE gives one a more conservative estimate of the model's accuracy that can help with this issue.
+
+From this analysis, it is clear more information is needed to get a very accurate prediction of a feature film's popularity. Larger sample sizes may help, but even better changes would include advanced sampling designs that control for sources of confounding in the data and make the sample more representative of the typical movies being released. In addition, more specific and distinguishing features of movies should be added to the data. More factors that detail the general outline of what happens in the movie's story, or how much was spent on advertising for the film are possible features that affect popularity. Other questions such as if there are popularity effects for movie sequels are important to consider as well.
