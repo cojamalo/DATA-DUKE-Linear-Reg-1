@@ -4,7 +4,7 @@ The following files were submitted for the first project of Duke University's Li
 ### Submission by Connor Lenio. Email: cojamalo@gmail.com
 Completion Date: May 1, 2017
 
-### Please visit https://cojamalo.github.io/DATA-DUKE-Inferential-Stats-1/stat_inf_project.html to properly view the project html file.
+### Please visit https://cojamalo.github.io/DATA-DUKE-Linear-Reg-1/reg_model_project.html to properly view the project html file.
 
 ### Introduction to the Data
 From "Data Analysis Project Information":
