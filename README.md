@@ -7,7 +7,7 @@ Completion Date: May 1, 2017
 ### Please visit https://cojamalo.github.io/DATA-DUKE-Linear-Reg-1/reg_model_project.html to properly view the project html file.
 
 ### Introduction to the Data
-From "Data Analysis Project Information":
+From the Future 500 Assignment:
 
 The data set is comprised of 651 randomly sampled movies produced and released before 2016.
 
